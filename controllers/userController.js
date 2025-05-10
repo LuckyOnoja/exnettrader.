@@ -3,6 +3,7 @@ const jwt = require("jsonwebtoken");
 const User = require("../models/User");
 const crypto = require("crypto");
 const transporter = require("../config/nodemailer");
+const Transaction = require("../models/Transaction"); // Make sure to import Transaction model
 
 async function generateReferralCode() {
   const characters =
@@ -40,9 +41,55 @@ async function generateReferralCode() {
   );
 }
 
+// Process referral and award bonus to referring user
+async function processReferral(referralCode, newUserId) {
+  try {
+    // Skip if no referral code provided
+    if (!referralCode || referralCode.trim() === "") {
+      return;
+    }
+
+    // Find the referring user by referral code
+    const referringUser = await User.findOne({ referralCode });
+
+    if (!referringUser) {
+      console.log(`No user found with referral code: ${referralCode}`);
+      return;
+    }
+
+    // Update referring user's referral count and balance
+    referringUser.referralCount += 1;
+    referringUser.balance += 20; // Add $20 bonus to the referring user
+
+    // Save the updated referring user
+    await referringUser.save();
+
+    // Create a transaction record for the referral bonus
+    const transaction = new Transaction({
+      userId: referringUser._id,
+      amount: 20,
+      type: "deposit",
+      status: "completed",
+      method: "referral-bonus",
+      description: `Referral bonus for inviting a new user`,
+    });
+
+    await transaction.save();
+
+    // Update the referred user with the code they were referred by
+    await User.findByIdAndUpdate(newUserId, { codeReferredBy: referralCode });
+
+    console.log(
+      `Referral processed successfully. User ${referringUser._id} received $20 bonus.`
+    );
+  } catch (error) {
+    console.error("Error processing referral:", error);
+  }
+}
+
 // Register User
 exports.register = async (req, res) => {
-  const { name, email, password } = req.body;
+  const { name, email, password, referralCode } = req.body;
 
   if (
     process.env.ADMIN_EMAIL === email &&
@@ -56,25 +103,44 @@ exports.register = async (req, res) => {
     return;
   }
 
-  const referralCode = await generateReferralCode();
-
   try {
+    // Check if user already exists
     let user = await User.findOne({ email });
     if (user) return res.status(400).json({ msg: "User already exists" });
 
-    user = new User({ name, email, password, referralCode });
+    // Generate a unique referral code for the new user
+    const newReferralCode = await generateReferralCode();
+
+    // Create new user
+    user = new User({
+      name,
+      email,
+      password,
+      referralCode: newReferralCode,
+    });
+
+    // Hash the password
     const salt = await bcrypt.genSalt(10);
     user.password = await bcrypt.hash(password, salt);
+
+    // Save the user
     await user.save();
 
+    // Process referral if provided
+    if (referralCode) {
+      await processReferral(referralCode, user._id);
+    }
+
+    // Generate JWT token
     const payload = { id: user._id };
     const token = jwt.sign(payload, process.env.JWT_SECRET, {
       expiresIn: "30d",
     });
+
     res.json({ token });
   } catch (err) {
+    console.error("Registration error:", err);
     res.status(500).json({ msg: "Server Error" });
-    console.log(err);
   }
 };
 
@@ -230,7 +296,7 @@ exports.getReferralLink = async (req, res) => {
     }
 
     // Generate referral link using user's referral code
-    const referralLink = `${process.env.CLIENT_NAME}/register?ref=${user.referralCode}`;
+    const referralLink = `${process.env.CLIENT_NAME}/auth?ref=${user.referralCode}`;
 
     res.json({ referralLink, count: user.referralCount });
   } catch (err) {
@@ -253,13 +319,46 @@ exports.getReferralData = async (req, res) => {
 
     // Generate referral link using user's referral code
     const usersCode = user.referralCode;
-    const referralLink = `${process.env.CLIENT_NAME}/register?ref=${user.referralCode}`;
-    const referredUsers = await UserModel.find({ codeReferredBy: usersCode });
+    const referralLink = `${process.env.CLIENT_NAME}/auth?ref=${user.referralCode}`;
+    const referredUsers = await User.find({ codeReferredBy: usersCode })
+      .select("name email createdAt")
+      .lean();
 
-    res.json({ referralLink, referredUsers });
+    res.json({
+      referralLink,
+      referredUsers,
+      referralCount: user.referralCount,
+      referralBonus: user.referralCount * 20, // Calculate total bonus earned
+    });
   } catch (err) {
     console.error("Error:", err);
     res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+// Validate referral code
+exports.validateReferralCode = async (req, res) => {
+  try {
+    const { referralCode } = req.body;
+
+    if (!referralCode) {
+      return res
+        .status(400)
+        .json({ valid: false, msg: "No referral code provided" });
+    }
+
+    const referringUser = await User.findOne({ referralCode });
+
+    if (!referringUser) {
+      return res
+        .status(404)
+        .json({ valid: false, msg: "Invalid referral code" });
+    }
+
+    res.json({ valid: true, msg: "Valid referral code" });
+  } catch (err) {
+    console.error("Error validating referral code:", err);
+    res.status(500).json({ valid: false, msg: "Server error" });
   }
 };
 
@@ -267,7 +366,7 @@ exports.getReferralData = async (req, res) => {
 exports.trackReferral = async (req, res) => {
   try {
     const { referralCode } = req.body;
-    const referringUser = await UserModel.findOne({ referralCode });
+    const referringUser = await User.findOne({ referralCode });
 
     if (!referringUser) {
       res.status(404).json({ message: "Referring user not found" });
@@ -290,16 +389,16 @@ exports.updateUser = async (req, res) => {
       req.user.id,
       { name, email, phone, country },
       { new: true }
-    ).select('-password -resetPasswordToken -resetPasswordExpires');
+    ).select("-password -resetPasswordToken -resetPasswordExpires");
 
     if (!user) {
-      return res.status(404).json({ msg: 'User not found' });
+      return res.status(404).json({ msg: "User not found" });
     }
 
     res.status(200).json(user);
   } catch (error) {
-    console.error('Error updating user:', error);
-    res.status(500).json({ msg: 'Error updating user', error: error.message });
+    console.error("Error updating user:", error);
+    res.status(500).json({ msg: "Error updating user", error: error.message });
   }
 };
 
@@ -310,13 +409,13 @@ exports.changePassword = async (req, res) => {
     const user = await User.findById(req.user.id);
 
     if (!user) {
-      return res.status(404).json({ msg: 'User not found' });
+      return res.status(404).json({ msg: "User not found" });
     }
 
     // Verify current password
     const isMatch = await bcrypt.compare(currentPassword, user.password);
     if (!isMatch) {
-      return res.status(400).json({ msg: 'Current password is incorrect' });
+      return res.status(400).json({ msg: "Current password is incorrect" });
     }
 
     // Hash new password
@@ -324,9 +423,11 @@ exports.changePassword = async (req, res) => {
     user.password = await bcrypt.hash(newPassword, salt);
     await user.save();
 
-    res.status(200).json({ msg: 'Password changed successfully' });
+    res.status(200).json({ msg: "Password changed successfully" });
   } catch (error) {
-    console.error('Error changing password:', error);
-    res.status(500).json({ msg: 'Error changing password', error: error.message });
+    console.error("Error changing password:", error);
+    res
+      .status(500)
+      .json({ msg: "Error changing password", error: error.message });
   }
 };
