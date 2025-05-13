@@ -23,7 +23,7 @@ const transactionSchema = new mongoose.Schema({
   },
   paymentMethod: { 
     type: String, 
-    enum: ["bitcoin", "ethereum", "usdt", null], 
+    enum: ["bitcoin", "ethereum", "usdt","bnb", "solana", "xrp", "ltc", "dodge", null], 
     default: null 
   },
   walletAddress: { 
