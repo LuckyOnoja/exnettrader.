@@ -7,25 +7,25 @@ const investmentPlans = {
     label: "Basic (12% Annual)",
     minAmount: 500,
     maxAmount: 1500,
-    duration: 7, // days
+    duration: 7, 
   },
   premium: {
     dailyRate: 0.18 / 365,
     label: "Premium (18% Annual)",
     minAmount: 1500,
     maxAmount: 10000,
-    duration: 14, // days
+    duration: 14, 
   },
   elite: {
     dailyRate: 0.24 / 365,
     label: "Elite (24% Annual)",
     minAmount: 10000,
     maxAmount: 1000000,
-    duration: 30, // days
+    duration: 30, 
   },
 };
 
-// Create new investment
+// new investment
 exports.createInvestment = async (req, res) => {
   try {
     const { amount, investmentPlan } = req.body;
@@ -33,7 +33,7 @@ exports.createInvestment = async (req, res) => {
     const userId = req.user.id;
     console.log("body", plan);
 
-    // Validate investment amount against plan
+    // Validating investment amount against plan
     const selectedPlan = investmentPlans[plan];
     if (!selectedPlan) {
       return res.status(400).json({
@@ -47,7 +47,7 @@ exports.createInvestment = async (req, res) => {
       });
     }
 
-    // Check user balance
+    // Checking user balance
     const user = await User.findById(userId);
     if (user.balance < amount) {
       return res.status(400).json({
@@ -55,7 +55,7 @@ exports.createInvestment = async (req, res) => {
       });
     }
 
-    // Deduct from balance and add to investment balance
+    // Deducting from balance and add to investment balance
     user.balance -= amount;
     user.investmentBalance = amount;
     user.investmentPlan = plan;

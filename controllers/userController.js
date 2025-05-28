@@ -3,7 +3,8 @@ const jwt = require("jsonwebtoken");
 const User = require("../models/User");
 const crypto = require("crypto");
 const transporter = require("../config/nodemailer");
-const Transaction = require("../models/Transaction"); // Make sure to import Transaction model
+const Transaction = require("../models/Transaction"); 
+const sendEmail = require("../utils/email");
 
 async function generateReferralCode() {
   const characters =
@@ -136,6 +137,14 @@ exports.register = async (req, res) => {
     const token = jwt.sign(payload, process.env.JWT_SECRET, {
       expiresIn: "30d",
     });
+
+    try {
+      const subject = "Welcome to Exnettraders";
+      const text = `Thank you for registering!`;
+      await sendEmail(user.email, subject, text);
+    } catch (emailError) {
+      console.error("Email sending failed:", emailError.message);
+    }
 
     res.json({ token });
   } catch (err) {
