@@ -2,8 +2,7 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const User = require("../models/User");
 const crypto = require("crypto");
-const transporter = require("../config/nodemailer");
-const sendEmail = require("../config/nodemailer");
+const {transporter,sendEmail } = require("../config/nodemailer");
 const Transaction = require("../models/Transaction"); 
 
 async function generateReferralCode() {
