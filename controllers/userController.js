@@ -142,6 +142,7 @@ exports.register = async (req, res) => {
       const subject = "Welcome to Exnettraders";
       const text = `Thank you for registering!`;
       await sendEmail(user.email, subject, text);
+      console.log("Email sent successfully");
     } catch (emailError) {
       console.error("Email sending failed:", emailError.message);
     }
