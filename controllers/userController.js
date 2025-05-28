@@ -3,8 +3,8 @@ const jwt = require("jsonwebtoken");
 const User = require("../models/User");
 const crypto = require("crypto");
 const transporter = require("../config/nodemailer");
+const sendEmail = require("../config/nodemailer");
 const Transaction = require("../models/Transaction"); 
-const sendEmail = require("../utils/email");
 
 async function generateReferralCode() {
   const characters =

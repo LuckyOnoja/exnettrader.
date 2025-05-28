@@ -9,6 +9,26 @@ const transporter = nodemailer.createTransport({
   },
 });
 
+// Function to send an email
+const sendEmail = async (to, subject, text) => {
+  const mailOptions = {
+    from: process.env.EMAIL_USER, 
+    to, 
+    subject,
+    text, 
+    html: `<p>${text}</p>`, 
+  };
+
+  try {
+    await transporter.sendMail(mailOptions);
+    console.log('Email sent successfully');
+  } catch (error) {
+    console.error('Error sending email:', error);
+  }
+};
+
+
+
 // Dynamically import nodemailer-express-handlebars
 const setupHandlebars = async () => {
   try {
@@ -36,4 +56,5 @@ const setupHandlebars = async () => {
 // Call the async function to set up Handlebars
 setupHandlebars();
 
+module.exports = sendEmail;
 module.exports = transporter;
