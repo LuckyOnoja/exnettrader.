@@ -1,115 +1,227 @@
 const cron = require("node-cron");
 const User = require("../models/User");
 const Transaction = require("../models/Transaction");
+const mongoose = require("mongoose");
 
 const investmentPlans = {
-  basic: { 
-    dailyRate: 0.12 / 365, 
+  basic: {
+    dailyRate: 0.12 / 365,
     duration: 7,
-    label: "Basic (12% Annual)" 
+    label: "Basic (12% Annual)",
   },
-  premium: { 
-    dailyRate: 0.18 / 365, 
+  premium: {
+    dailyRate: 0.18 / 365,
     duration: 14,
-    label: "Premium (18% Annual)" 
+    label: "Premium (18% Annual)",
   },
-  elite: { 
-    dailyRate: 0.24 / 365, 
+  elite: {
+    dailyRate: 0.24 / 365,
     duration: 30,
-    label: "Elite (24% Annual)" 
-  }
+    label: "Elite (24% Annual)",
+  },
 };
 
-// Schedule the task to run daily at midnight
-cron.schedule("0 0 * * *", async () => {
+// ---------- DISTRIBUTED LOCK ----------
+const LOCK_KEY = "investment_payout_lock";
+const LOCK_TTL = 60 * 10; // 10 minutes
+
+/**
+ * Acquire a distributed lock using MongoDB.
+ * Returns true if lock was acquired, false otherwise.
+ */
+async function acquireLock(db) {
   try {
-    console.log("Running daily investment payout...");
-    
-    // 1. Find all ACTIVE investments (status: "completed")
-    const activeInvestments = await Transaction.find({
-      type: "investment",
-      status: "completed", 
-      investmentPlan: { $in: ["basic", "premium", "elite"] }
-    });
+    const now = Date.now();
+    const expiresAt = new Date(now + LOCK_TTL * 1000);
 
-    let processedCount = 0;
-    let totalPayout = 0;
-    let maturedInvestments = 0;
-
-    for (const investment of activeInvestments) {
-      try {
-        const user = await User.findById(investment.userId);
-        if (!user) continue;
-
-        const plan = investmentPlans[investment.investmentPlan];
-        if (!plan) continue;
-
-        // Calculate days since investment started
-        const daysInvested = Math.floor(
-          (new Date() - investment.createdAt) / (1000 * 60 * 60 * 24)
-        );
-
-        // Check if investment has matured
-        if (daysInvested >= plan.duration) {
-          // Final payout (principal + total earnings)
-          const finalPayout = investment.amount * (1 + (plan.dailyRate * plan.duration));
-          
-          // Update user balance
-          user.balance += finalPayout;
-          user.totalEarnings = (user.totalEarnings || 0) + finalPayout;
-          
-          // Mark investment as "matured" 
-          investment.status = "matured";
-          await investment.save();
-          
-          // Record payout transaction
-          const payoutTransaction = new Transaction({
-            userId: user._id,
-            amount: finalPayout,
-            type: "payout",
-            status: "completed",
-            investmentPlan: investment.investmentPlan
-          });
-
-          await payoutTransaction.save();
-          maturedInvestments++;
-        } else {
-          // Regular daily earnings
-          const dailyEarnings = investment.amount * plan.dailyRate;
-          
-          // Update user balance
-          user.balance += dailyEarnings;
-          user.totalEarnings = (user.totalEarnings || 0) + dailyEarnings;
-          
-          // Record daily earnings (optional)
-          const earningTransaction = new Transaction({
-            userId: user._id,
-            amount: dailyEarnings,
-            type: "earning",
-            status: "completed",
-            investmentPlan: investment.investmentPlan
-          });
-
-          await earningTransaction.save();
-          processedCount++;
-          totalPayout += dailyEarnings;
-        }
-
-        await user.save();
-      } catch (error) {
-        console.error(`Error processing investment ${investment._id}:`, error);
+    const result = await db.collection("locks").findOneAndUpdate(
+      { _id: LOCK_KEY },
+      { $setOnInsert: { expiresAt } },
+      {
+        upsert: true,
+        returnDocument: "after",
       }
+    );
+
+    // If the document was just inserted → we own the lock
+    const wasInserted = result.lastErrorObject?.upserted;
+    if (wasInserted) {
+      console.log("Payout lock acquired.");
+      return true;
+    }
+
+    // If existing lock hasn't expired, we don't get it
+    const existing = result.value;
+    if (existing && existing.expiresAt > new Date()) {
+      console.log("Payout lock held by another instance. Skipping.");
+      return false;
+    }
+
+    // Lock expired → try to take it
+    const updateResult = await db.collection("locks").findOneAndUpdate(
+      { _id: LOCK_KEY, expiresAt: { $lt: new Date() } },
+      { $set: { expiresAt } },
+      { returnDocument: "after" }
+    );
+
+    const acquired = !!updateResult.value;
+    if (acquired) console.log("Payout lock acquired (stale lock cleared).");
+    return acquired;
+  } catch (err) {
+    console.error("Error acquiring payout lock:", err);
+    return false;
+  }
+}
+
+// -----------------------------------------------------------------
+// Run cron ONLY when this file is executed directly (not on import/reload)
+if (require.main === module) {
+  console.log("Daily payout scheduler initialized. Next run: 00:00 UTC");
+
+  cron.schedule("0 0 * * *", async () => {
+    console.log("Cron triggered: Running daily payout job...");
+    await runPayout();
+  });
+}
+
+/**
+ * Main payout runner
+ */
+async function runPayout() {
+  const db = mongoose.connection.db;
+  const lockAcquired = await acquireLock(db);
+  if (!lockAcquired) return;
+
+  console.log("Starting daily payout processing...");
+
+  let dailyCount = 0;
+  let maturedCount = 0;
+  let totalDailyPayout = 0;
+  let totalMaturedPayout = 0;
+
+  try {
+    const activeUsers = await User.find({
+      investmentPlan: { $in: ["basic", "premium", "elite"] },
+      investmentBalance: { $gt: 0 },
+    }).lean(); // lean() for performance
+
+    console.log(`Found ${activeUsers.length} users with active investments.`);
+
+    for (const user of activeUsers) {
+      try {
+        await processUser(user, {
+          dailyCount,
+          maturedCount,
+          totalDailyPayout,
+          totalMaturedPayout,
+        });
+      } catch (err) {
+        console.error(`Failed to process user ${user._id}:`, err.message);
+        // Continue with next user
+      }
+    }
+  } catch (err) {
+    console.error("Critical error in payout job:", err);
+  } finally {
+    // Always release lock
+    try {
+      await db.collection("locks").deleteOne({ _id: LOCK_KEY });
+      console.log("Payout lock released.");
+    } catch (err) {
+      console.error("Failed to release lock:", err);
     }
 
     console.log(`
-      Daily payout completed. 
-      Processed ${processedCount} investments, 
-      Matured ${maturedInvestments} investments, 
-      Total payout: $${totalPayout.toFixed(2)}
+      Daily Payout Summary:
+      → Daily earnings paid to: ${dailyCount} users ($${totalDailyPayout.toFixed(2)})
+      → Investments matured: ${maturedCount} ($${totalMaturedPayout.toFixed(2)})
+      → Job completed at: ${new Date().toISOString()}
     `);
-  } catch (error) {
-    console.error("Error in daily investment cron job:", error);
   }
-});
 
-console.log("Daily investment payout scheduler initialized.");
+  // Inner function to mutate counters
+  async function processUser(user, counters) {
+    const userId = user._id;
+    const plan = investmentPlans[user.investmentPlan];
+    if (!plan) {
+      console.warn(`User ${userId} has invalid plan: ${user.investmentPlan}`);
+      return;
+    }
+
+    const now = new Date();
+    const startDate = user.investmentStartDate;
+    const daysInvested = Math.floor((now - startDate) / (1000 * 60 * 60 * 24));
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+    // Load full user document for updates
+    const fullUser = await User.findById(userId);
+    if (!fullUser) return;
+
+    // === DAILY PAYOUT ===
+    const lastPayoutDate = fullUser.lastDailyPayout
+      ? new Date(fullUser.lastDailyPayout.getFullYear(), fullUser.lastDailyPayout.getMonth(), fullUser.lastDailyPayout.getDate())
+      : null;
+
+    if (!lastPayoutDate || lastPayoutDate < today) {
+      const dailyEarnings = parseFloat((fullUser.investmentBalance * plan.dailyRate).toFixed(8));
+
+      fullUser.balance += dailyEarnings;
+      fullUser.totalEarnings += dailyEarnings;
+      fullUser.lastDailyPayout = now;
+
+      await Transaction.create({
+        userId: fullUser._id,
+        amount: dailyEarnings,
+        type: "payout",
+        status: "completed",
+        investmentPlan: fullUser.investmentPlan,
+      });
+
+      counters.dailyCount++;
+      counters.totalDailyPayout += dailyEarnings;
+    }
+
+    // === MATURITY CHECK ===
+    if (daysInvested >= plan.duration) {
+      const principal = fullUser.investmentBalance;
+      const totalInterest = parseFloat((principal * plan.dailyRate * plan.duration).toFixed(8));
+      const finalPayout = principal + totalInterest;
+
+      fullUser.balance += finalPayout;
+      fullUser.totalEarnings += totalInterest;
+
+      // Reset investment state
+      fullUser.investmentBalance = 0;
+      fullUser.investmentPlan = null;
+      fullUser.investmentStartDate = null;
+      fullUser.lastDailyPayout = null;
+
+      // Mark original investment as matured
+      await Transaction.updateOne(
+        {
+          userId: fullUser._id,
+          type: "investment",
+          status: "completed",
+        },
+        { status: "matured", completedAt: now }
+      );
+
+      // Record final payout
+      await Transaction.create({
+        userId: fullUser._id,
+        amount: finalPayout,
+        type: "payout",
+        status: "completed",
+        investmentPlan: fullUser.investmentPlan, // null now, but safe
+      });
+
+      counters.maturedCount++;
+      counters.totalMaturedPayout += finalPayout;
+    }
+
+    await fullUser.save();
+  }
+}
+
+// Export for testing or manual trigger
+module.exports = { runPayout };

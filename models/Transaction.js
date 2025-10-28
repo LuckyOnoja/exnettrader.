@@ -56,5 +56,8 @@ const transactionSchema = new mongoose.Schema({
 });
 
 transactionSchema.plugin(mongoosePaginate);
+transactionSchema.index({ userId: 1, type: 1 });
+transactionSchema.index({ status: 1, type: 1 });
+transactionSchema.index({ investmentPlan: 1 });
 
 module.exports = mongoose.model("Transaction", transactionSchema);
