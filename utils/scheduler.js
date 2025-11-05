@@ -5,19 +5,25 @@ const mongoose = require("mongoose");
 
 const investmentPlans = {
   basic: {
-    dailyRate: 0.12 / 365,
+    dailyRate: 0.10, // 10% daily
     duration: 7,
-    label: "Basic (12% Annual)",
+    label: "Basic (10% Daily)",
+    minAmount: 100,
+    maxAmount: 1500,
   },
   premium: {
-    dailyRate: 0.18 / 365,
-    duration: 14,
-    label: "Premium (18% Annual)",
+    dailyRate: 0.50, // 50% daily
+    duration: 7,
+    label: "Premium (50% Daily)",
+    minAmount: 1000,
+    maxAmount: 10000,
   },
   elite: {
-    dailyRate: 0.24 / 365,
-    duration: 30,
-    label: "Elite (24% Annual)",
+    dailyRate: 0.20, // 20% daily
+    duration: 7,
+    label: "Elite (20% Daily)",
+    minAmount: 500,
+    maxAmount: 1000000,
   },
 };
 
@@ -224,4 +230,4 @@ async function runPayout() {
 }
 
 // Export for testing or manual trigger
-module.exports = { runPayout };
+module.exports = { runPayout, investmentPlans };
