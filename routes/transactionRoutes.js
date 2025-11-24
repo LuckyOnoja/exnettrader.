@@ -110,13 +110,9 @@ router.get("/admin/all", auth, async (req, res) => {
 });
 
 router.get("/admin/deposits", auth, adminController.getDeposits);
-router.put("/admin/deposits/approve", auth, adminController.approveDeposit);
-router.put("/admin/deposits/reject", auth, adminController.rejectDeposit);
-router.get(
-  "/admin/withdrawals",
-  auth,
-  adminController.getWithdrawals
-);
+router.put("/admin/deposits/approve", adminController.approveDeposit);
+router.put("/admin/deposits/reject", adminController.rejectDeposit);
+router.get("/admin/withdrawals", auth, adminController.getWithdrawals);
 router.put(
   "/admin/withdrawals/approve",
   auth,
