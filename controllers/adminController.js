@@ -218,10 +218,6 @@ exports.getActiveInvestments = async (req, res) => {
 // Get terminate investment
 exports.terminateInvestment = async (req, res) => {
   try {
-    if (!req.user.isAdmin) {
-      return res.status(403).json({ error: "Access denied. Admins only." });
-    }
-
     const transaction = await Transaction.findById(req.params.id);
     if (!transaction) {
       return res.status(404).json({ error: "Investment not found" });

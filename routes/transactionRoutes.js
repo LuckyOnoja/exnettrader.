@@ -66,12 +66,7 @@ router.get("/", auth, async (req, res) => {
 
 // Admin routes
 // Add to your transactionRoutes.js
-router.get("/admin/all", auth, async (req, res) => {
-  // Check if the requester is admin
-  if (!req.user.id === process.env.ADMIN_EMAIL) {
-    console.log("access denied");
-    return res.status(403).json({ error: "Access denied. Admins only." });
-  }
+router.get("/admin/all", async (req, res) => {
   try {
     const { page = 1, limit = 10, search = "", type, status } = req.query;
 
@@ -109,7 +104,7 @@ router.get("/admin/all", auth, async (req, res) => {
   }
 });
 
-router.get("/admin/deposits",  adminController.getDeposits);
+router.get("/admin/deposits", adminController.getDeposits);
 router.put("/admin/deposits/approve", adminController.approveDeposit);
 router.put("/admin/deposits/reject", adminController.rejectDeposit);
 router.get("/admin/withdrawals", adminController.getWithdrawals);
@@ -119,10 +114,7 @@ router.put(
   adminController.approveWithdrawal
 );
 router.put("/admin/withdrawals/reject", adminController.rejectWithdrawal);
-router.get(
-  "/admin/investments/active",
-  adminController.getActiveInvestments
-);
+router.get("/admin/investments/active", adminController.getActiveInvestments);
 
 /**
  * @route GET /api/transactions/:id
@@ -162,11 +154,6 @@ router.get("/:id", auth, async (req, res) => {
  */
 router.get("/user/:id", auth, async (req, res) => {
   try {
-    // Check if the requester is admin
-    if (!req.user.id === process.env.ADMIN_EMAIL) {
-      return res.status(403).json({ error: "Access denied. Admins only." });
-    }
-
     const { userId, limit = 5, type, status } = req.params;
     const query = {};
 
@@ -194,6 +181,6 @@ router.get("/user/:id", auth, async (req, res) => {
   }
 });
 
-router.put("/:id/terminate", auth, adminController.terminateInvestment);
+router.put("/:id/terminate", adminController.terminateInvestment);
 
 module.exports = router;
