@@ -109,19 +109,18 @@ router.get("/admin/all", auth, async (req, res) => {
   }
 });
 
-router.get("/admin/deposits", auth, adminController.getDeposits);
+router.get("/admin/deposits",  adminController.getDeposits);
 router.put("/admin/deposits/approve", adminController.approveDeposit);
 router.put("/admin/deposits/reject", adminController.rejectDeposit);
-router.get("/admin/withdrawals", auth, adminController.getWithdrawals);
+router.get("/admin/withdrawals", adminController.getWithdrawals);
 router.put(
   "/admin/withdrawals/approve",
   auth,
   adminController.approveWithdrawal
 );
-router.put("/admin/withdrawals/reject", auth, adminController.rejectWithdrawal);
+router.put("/admin/withdrawals/reject", adminController.rejectWithdrawal);
 router.get(
   "/admin/investments/active",
-  auth,
   adminController.getActiveInvestments
 );
 
