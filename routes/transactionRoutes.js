@@ -165,13 +165,8 @@ router.get("/:id", auth, async (req, res) => {
  * @desc Get transactions with filters
  * @access Private (Admin)
  */
-router.get("/user/:id", auth, async (req, res) => {
+router.get("/user/:id", async (req, res) => {
   try {
-    // Check if the requester is admin
-    if (!req.user.id === process.env.ADMIN_EMAIL) {
-      return res.status(403).json({ error: "Access denied. Admins only." });
-    }
-
     const { userId, limit = 5, type, status } = req.params;
     const query = {};
 
@@ -199,6 +194,6 @@ router.get("/user/:id", auth, async (req, res) => {
   }
 });
 
-router.put("/:id/terminate", auth, adminController.terminateInvestment);
+router.put("/admin/investments/terminate/:id", adminController.terminateInvestment);
 
 module.exports = router;

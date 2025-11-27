@@ -196,17 +196,33 @@ exports.rejectWithdrawal = async (req, res) => {
   }
 };
 
-// Get all active investments
+// Get all active investments - UPDATED to return transactions
 exports.getActiveInvestments = async (req, res) => {
   try {
-    const usersWithInvestments = await User.find({
-      investmentPlan: { $ne: null },
-      investmentBalance: { $gt: 0 },
-    }).select(
-      "name email investmentPlan investmentBalance investmentStartDate"
-    );
+    // Get active investment transactions instead of users
+    const activeInvestments = await Transaction.find({
+      type: "investment", 
+       $or: [
+        { status: "active" },
+        { status: "completed" }
+      ],
+    })
+    .populate("userId", "name email")
+    .sort({ createdAt: -1 });
 
-    res.json(usersWithInvestments);
+    // Transform the data to match your frontend expectations
+    const formattedInvestments = activeInvestments.map(transaction => ({
+      _id: transaction._id, // This is the transaction ID
+      name: transaction.userId?.name,
+      email: transaction.userId?.email,
+      investmentBalance: transaction.amount,
+      investmentPlan: transaction.investmentPlan,
+      investmentStartDate: transaction.createdAt,
+      userId: transaction.userId?._id,
+      totalEarnings: transaction.totalEarnings || 0
+    }));
+
+    res.json(formattedInvestments);
   } catch (error) {
     console.error("Get active investments error:", error);
     res.status(500).json({
@@ -218,19 +234,12 @@ exports.getActiveInvestments = async (req, res) => {
 // Get terminate investment
 exports.terminateInvestment = async (req, res) => {
   try {
-    if (!req.user.isAdmin) {
-      return res.status(403).json({ error: "Access denied. Admins only." });
-    }
 
-    const transaction = await Transaction.findById(req.params.id);
+    const investmentId = req.params.id;
+
+    const transaction = await Transaction.findById(investmentId);
     if (!transaction) {
-      return res.status(404).json({ error: "Investment not found" });
-    }
-
-    if (transaction.status !== "active") {
-      return res
-        .status(400)
-        .json({ error: "Only active investments can be terminated" });
+      return res.status(404).json({ error: "Investment not found i know" });
     }
 
     // Return funds to user's available balance
