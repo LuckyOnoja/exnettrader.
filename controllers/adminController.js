@@ -234,10 +234,7 @@ exports.getActiveInvestments = async (req, res) => {
 // Get terminate investment
 exports.terminateInvestment = async (req, res) => {
   try {
-
-    const investmentId = req.params.id;
-
-    const transaction = await Transaction.findById(investmentId);
+    const transaction = await Transaction.findById(req.params.id);
     if (!transaction) {
       return res.status(404).json({ error: "Investment not found i know" });
     }

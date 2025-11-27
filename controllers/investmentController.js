@@ -3,25 +3,25 @@ const User = require("../models/User");
 
 const investmentPlans = {
   basic: {
-    dailyRate: 0.12 / 365,
-    label: "Basic (12% Annual)",
-    minAmount: 500,
+    dailyRate: 0.10, // 10% daily
+    label: "Basic (10% Daily)",
+    minAmount: 100,
     maxAmount: 1500,
     duration: 7, 
   },
   premium: {
-    dailyRate: 0.18 / 365,
-    label: "Premium (18% Annual)",
-    minAmount: 1500,
+    dailyRate: 0.50, // 50% daily
+    label: "Premium (50% Daily)",
+    minAmount: 1000,
     maxAmount: 10000,
-    duration: 14, 
+    duration: 7, 
   },
   elite: {
-    dailyRate: 0.24 / 365,
-    label: "Elite (24% Annual)",
-    minAmount: 10000,
+    dailyRate: 0.20, // 20% daily
+    label: "Elite (20% Daily)",
+    minAmount: 500,
     maxAmount: 1000000,
-    duration: 30, 
+    duration: 7, 
   },
 };
 
@@ -95,3 +95,6 @@ exports.getUserInvestments = async (req, res) => {
     });
   }
 };
+
+// Export plans for other modules
+exports.investmentPlans = investmentPlans;
